@@ -14,9 +14,3 @@ app = FastAPI()
 async def root():
     return {"message": "This is an API for the database management system. Please refer to the documentation for available endpoints."}
 
-@app.get("/users")
-async def get_users():
-    with engine.connect() as connection:
-        result = connection.execute(text("SELECT * FROM users"))
-        users = [dict(row) for row in result]
-    return {"users": users}
