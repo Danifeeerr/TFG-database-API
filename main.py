@@ -27,7 +27,7 @@ async def root():
 def get_users():
     with engine.connect() as conn:
         result = conn.execute(text("SELECT * FROM users")).mappings().all()
-    return result
+        return result
 
 
 @app.get("/user/{id}", response_model=Users, tags=["Users"])
@@ -103,3 +103,73 @@ def delete_user(id: int):
  ###########################################################
 
 
+@app.get("/training", response_model=List[Training], tags=["Trainings"])
+def get_trainings():
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM training")).mappings().all()
+
+        return res
+
+@app.get("/training/{id}", response_model=Training, tags=["Trainings"])
+def get_training_by_id(id: int):
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM training WHERE id = :id"),
+        {"id": id}
+        ).mappings().first()
+
+        if res is None:
+            raise HTTPException(status_code=404, detail="Training not found")
+    
+        return res
+
+@app.post("/training/new", response_model=Training, tags=["Trainings"])
+def create_new_training(t: TrainingInsert):
+    with engine.connect() as conn:
+        try:
+            training = conn.execute(
+                text("INSERT INTO training (name, hours, error_limit) VALUES (:name, :hours, :e_l) RETURNING *"),
+                {"name": t.name, 
+                 "hours": t.hours, 
+                 "e_l": t.error_limit}
+            ).mappings().one()
+
+            conn.commit()
+            return training
+        
+        except IntegrityError:
+            raise HTTPException(status_code=409, detail="Training name already exists")
+        
+@app.post("/training/update", response_model=Training, tags=["Trainings"])
+def update_user(t: Training):
+    with engine.connect() as conn:
+        try:
+            training = conn.execute(
+                text("UPDATE training SET name = :name, hours = :hours, error_limit = :e_l WHERE id = :id RETURNING *"),
+                {"name": t.name,
+                 "hours": t.hours,
+                 "e_l": t.error_limit,
+                 "id": t.id}
+            ).mappings().one()
+
+            conn.commit()
+
+            return training
+        
+        except NoResultFound:
+            raise HTTPException(status_code=404, detail="Training not found")             
+        except IntegrityError:
+            raise HTTPException(status_code=409, detail="Training name already exists")
+        
+@app.delete("/training/delete/{id}", tags=["Trainings"])
+def delete_training(id: int):
+    with engine.connect() as conn:
+        res = conn.execute(
+            text("DELETE FROM training where id = :id RETURNING *"),
+            {"id": id}
+        ).mappings().first()
+        conn.commit()
+
+        if res is None:
+            raise HTTPException(status_code=404, detail="Training not found")
+    
+        return res
