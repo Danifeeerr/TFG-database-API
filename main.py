@@ -4,10 +4,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError,NoResultFound
 import os
 from typing import List
+from datetime import datetime
 
 from models.users import Users, UsersInsert
 from models.training import Training, TrainingInsert
 from models.assignation import Assignation, AssignationInsert, AssignationUpdate
+from models.attempt import Attempt
 
 load_dotenv() # Load environment variables from .env file
 
@@ -27,8 +29,11 @@ async def root():
 @app.get("/users", response_model=List[Users], tags=["Users"])
 def get_users():
     with engine.connect() as conn:
-        result = conn.execute(text("SELECT * FROM users")).mappings().all()
-        return result
+        res = conn.execute(text("SELECT * FROM users")).mappings().all()
+        if not res:
+            raise HTTPException(status_code=404, detail="Users not found")
+        
+        return res
 
 
 @app.get("/user/{id}", response_model=Users, tags=["Users"])
@@ -108,7 +113,9 @@ def delete_user(id: int):
 def get_trainings():
     with engine.connect() as conn:
         res = conn.execute(text("SELECT * FROM training")).mappings().all()
-
+        if not res:
+            raise HTTPException(status_code=404, detail="Trainings not found")
+        
         return res
 
 @app.get("/training/{id}", response_model=Training, tags=["Trainings"])
@@ -185,7 +192,8 @@ def delete_training(id: int):
 def get_assignation():
     with engine.connect() as conn:
         res = conn.execute(text("SELECT * FROM assignation")).mappings().all()
-
+        if not res:
+            raise HTTPException(status_code=404, detail="Assignations not found")
         return res
 
 @app.get("/assignation/{userid}", response_model=List[Assignation], tags=["Assignations"])
@@ -253,3 +261,70 @@ def delete_assignation(userid: int, trainingid: int):
         return res
  
 
+
+ ###########################################################
+ #########################ATTEMPTS##########################
+ ###########################################################
+
+@app.get("/attempt", response_model=List[Attempt], tags=["Attempts"])
+def get_attempts_by_userid_and_trainingid(userid: int, trainingid: int):
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM attempt WHERE userid = :userid and trainingid = :trainingid"),
+        {"userid": userid,
+         "trainingid": trainingid}
+        ).mappings().all()
+
+        if not res:
+            raise HTTPException(status_code=404, detail="Attempts not found")
+    
+        return res
+    
+@app.get("/attempt/timestamp", response_model=Attempt, tags=["Attempts"])
+def get_attempts_by_userid_and_timestamp(userid: int, timestamp: datetime):
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM attempt WHERE userid = :userid and timestamp = :timestamp"),
+        {"userid": userid,
+         "timestamp": timestamp}
+        ).mappings().first()
+
+        if not res:
+            raise HTTPException(status_code=404, detail="Attempts not found")
+    
+        return res
+    
+@app.post("/attempt/new", response_model=Attempt, tags=["Attempts"])
+def create_new_attempt(a: Attempt):
+    with engine.connect() as conn:
+        try:
+            attempt = conn.execute(
+                text("INSERT INTO attempt (userid, trainingid, time_spent, number_errors, timestamp) VALUES (:userid, :trainingid, :time_spent" \
+                ", :number_errors, :timestamp) RETURNING *"),
+                {"userid": a.userid, 
+                 "trainingid": a.trainingid, 
+                 "time_spent": a.time_spent,
+                 "number_errors": a.number_errors,
+                 "timestamp": a.timestamp}
+            ).mappings().one()
+
+            conn.commit()
+            return attempt
+        
+        except NoResultFound:
+            raise HTTPException(status_code=404, detail="No user or training found")
+        
+@app.delete("/attempt/delete", tags=["Attempts"])
+def delete_attempt(userid: int, trainingid: int, timestamp: datetime):
+    with engine.connect() as conn:
+        res = conn.execute(
+            text("DELETE FROM attempt where userid = :userid and trainingid = :trainingid and timestamp = :timestamp RETURNING *"),
+            {"userid": userid,
+             "trainingid": trainingid,
+             "timestamp": timestamp}
+        ).mappings().first()
+        conn.commit()
+
+        if res is None:
+            raise HTTPException(status_code=404, detail="Assignation not found")
+    
+        return res
+ 
