@@ -6,6 +6,7 @@ import os
 from typing import List
 
 from models.users import Users, UsersInsert
+from models.training import Training, TrainingInsert
 
 load_dotenv() # Load environment variables from .env file
 
@@ -25,9 +26,8 @@ async def root():
 @app.get("/users", response_model=List[Users], tags=["Users"])
 def get_users():
     with engine.connect() as conn:
-        result = conn.execute(text("SELECT * FROM users")).fetchall()
-    users = [{"id": r[0], "username": r[1], "password_hash": r[2],"admin": r[3]} for r in result]
-    return users
+        result = conn.execute(text("SELECT * FROM users")).mappings().all()
+    return result
 
 
 @app.get("/user/{id}", response_model=Users, tags=["Users"])
@@ -101,4 +101,5 @@ def delete_user(id: int):
  ###########################################################
  ##########################TRAINING#########################
  ###########################################################
+
 
