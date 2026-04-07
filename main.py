@@ -7,6 +7,7 @@ from typing import List
 
 from models.users import Users, UsersInsert
 from models.training import Training, TrainingInsert
+from models.assignation import Assignation, AssignationInsert, AssignationUpdate
 
 load_dotenv() # Load environment variables from .env file
 
@@ -173,3 +174,82 @@ def delete_training(id: int):
             raise HTTPException(status_code=404, detail="Training not found")
     
         return res
+
+
+ ###########################################################
+ ######################ASSIGNATIONS#########################
+ ###########################################################
+
+
+@app.get("/assignation", response_model=List[Assignation], tags=["Assignations"])
+def get_assignation():
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM assignation")).mappings().all()
+
+        return res
+
+@app.get("/assignation/{userid}", response_model=List[Assignation], tags=["Assignations"])
+def get_assignation_by_id(userid: int):
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM assignation WHERE userid = :userid"),
+        {"userid": userid}
+        ).mappings().all()
+
+        if not res:
+            raise HTTPException(status_code=404, detail="Assignations not found")
+    
+        return res
+    
+
+@app.post("/assignation/new", response_model=Assignation, tags=["Assignations"])
+def create_new_assignation(a: AssignationInsert):
+    with engine.connect() as conn:
+        try:
+            assignation = conn.execute(
+                text("INSERT INTO assignation (userid, trainingid, date) VALUES (:userid, :trainingid, :date) RETURNING *"),
+                {"userid": a.userid, 
+                 "trainingid": a.trainingid, 
+                 "date": a.date}
+            ).mappings().one()
+
+            conn.commit()
+            return assignation
+        
+        except IntegrityError:
+            raise HTTPException(status_code=409, detail="The user may already have an assignation to this training or the user or the training does not exist")
+        
+
+@app.post("/assignation/update", response_model=Assignation, tags=["Assignations"])
+def update_assignation(a: AssignationUpdate):
+    with engine.connect() as conn:
+        try:
+            assignation = conn.execute(
+                text("UPDATE assignation SET completed = :completed WHERE userid = :userid and trainingid = :trainingid RETURNING *"),
+                {"completed": a.completed,
+                 "userid": a.userid,
+                 "trainingid": a.trainingid}
+            ).mappings().one()
+
+            conn.commit()
+
+            return assignation
+        
+        except NoResultFound:
+            raise HTTPException(status_code=404, detail="Assignation not found")            
+
+@app.delete("/assignation/delete", tags=["Assignations"])
+def delete_assignation(userid: int, trainingid: int):
+    with engine.connect() as conn:
+        res = conn.execute(
+            text("DELETE FROM assignation where userid = :userid and trainingid = :trainingid RETURNING *"),
+            {"userid": userid,
+             "trainingid": trainingid}
+        ).mappings().first()
+        conn.commit()
+
+        if res is None:
+            raise HTTPException(status_code=404, detail="Assignation not found")
+    
+        return res
+ 
+
