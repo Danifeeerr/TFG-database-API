@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError,NoResultFound
 import os
 from typing import List
 
@@ -18,6 +18,9 @@ app = FastAPI()
 async def root():
     return {"message": "This is an API for the database management system. Please refer to the documentation for available endpoints."}
 
+ ###########################################################
+ ##########################USERS############################
+ ###########################################################
 
 @app.get("/users", response_model=List[Users], tags=["Users"])
 def get_users():
@@ -73,11 +76,10 @@ def update_user(u: Users):
 
             conn.commit()
 
-            if user is None:
-                raise HTTPException(status_code=404, detail="User not found")
-            
             return user
         
+        except NoResultFound:
+            raise HTTPException(status_code=404, detail="User not found")             
         except IntegrityError:
             raise HTTPException(status_code=409, detail="Username already exists")
         
@@ -95,4 +97,8 @@ def delete_user(id: int):
     
         return res
 
-        
+    
+ ###########################################################
+ ##########################TRAINING#########################
+ ###########################################################
+
