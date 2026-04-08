@@ -8,3 +8,9 @@ class Attempt(BaseModel):
     number_errors: int
     timestamp: datetime
 
+class NewAttempt(BaseModel):
+    userid: str
+    trainingid: int
+    time_spent: time
+    number_errors: int
+    timestamp: datetime

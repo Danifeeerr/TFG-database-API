@@ -13,6 +13,6 @@ class AssignationInsert(BaseModel):
     date: date
 
 class AssignationUpdate(BaseModel):
-    userid: int
+    userid: str
     trainingid: int
     completed: bool

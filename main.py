@@ -1,25 +1,37 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError,NoResultFound
 import os
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
 from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
+import jwt
+from jwt.exceptions import PyJWTError
 
-from models.users import Users, UsersInsert
+from models.users import Users, UsersInsert, UserLogin
 from models.training import Training, TrainingInsert
 from models.assignation import Assignation, AssignationInsert, AssignationUpdate
-from models.attempt import Attempt
+from models.attempt import Attempt, NewAttempt
 
 load_dotenv() # Load environment variables from .env file
 
 DATABASE_URL = os.getenv("dburl") 
+
+
 engine = create_engine(DATABASE_URL) # Create a database engine using the URL from the environment variable
 
 app = FastAPI()
 
 hasher = PasswordHasher()
+
+# JWT token data
+SECRET_KEY = os.getenv("skey")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
 
 @app.get("/")
 async def root():
@@ -39,8 +51,9 @@ def get_users():
         return res
 
 
-@app.get("/user/{id}", response_model=Users, tags=["Users"])
-def get_user_by_id(id: int):
+@app.get("/user", response_model=Users, tags=["Users"])
+def get_user_by_token(token: str):
+    id = token_to_user_id(token)
     with engine.connect() as conn:
         res = conn.execute(
             text("SELECT * FROM users where id= :id"), 
@@ -52,7 +65,19 @@ def get_user_by_id(id: int):
         
         return res
 
- 
+@app.get("/user/{id}", response_model=Users, tags=["Users"]) #Només ho pot fer l'administrador
+def get_user_by_id(id):
+    with engine.connect() as conn:
+        res = conn.execute(
+            text("SELECT * FROM users where id= :id"), 
+            {"id": id}
+        ).mappings().first()
+
+        if res is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return res
+
 @app.post("/users/new", response_model=Users, tags=["Users"])
 def create_new_user(u: UsersInsert):
     passHash = hasher.hash(u.password_hash)
@@ -72,7 +97,7 @@ def create_new_user(u: UsersInsert):
             raise HTTPException(status_code=409, detail="Username already exists")
         
 
-@app.post("/users/update", response_model=Users, tags=["Users"])
+@app.post("/users/update", response_model=Users, tags=["Users"]) #Només ho pot fer l'administrador
 def update_user(u: Users):
     passHash = hasher.hash(u.password_hash)
     with engine.connect() as conn:
@@ -94,7 +119,7 @@ def update_user(u: Users):
         except IntegrityError:
             raise HTTPException(status_code=409, detail="Username already exists")
         
-@app.delete("/users/delete/{id}", tags=["Users"])
+@app.delete("/users/delete/{id}", tags=["Users"]) # Només ho pot fer l'administrador
 def delete_user(id: int):
     with engine.connect() as conn:
         res = conn.execute(
@@ -201,7 +226,7 @@ def get_assignation():
             raise HTTPException(status_code=404, detail="Assignations not found")
         return res
 
-@app.get("/assignation/{userid}", response_model=List[Assignation], tags=["Assignations"])
+@app.get("/assignation/{userid}", response_model=List[Assignation], tags=["Assignations"]) #Només la pot fer l'administrador
 def get_assignation_by_id(userid: int):
     with engine.connect() as conn:
         res = conn.execute(text("SELECT * FROM assignation WHERE userid = :userid"),
@@ -212,9 +237,21 @@ def get_assignation_by_id(userid: int):
             raise HTTPException(status_code=404, detail="Assignations not found")
     
         return res
-    
 
-@app.post("/assignation/new", response_model=Assignation, tags=["Assignations"])
+@app.get("/assignation", response_model=List[Assignation], tags=["Assignations"])
+def get_assignation_by_token(token: str):
+    id = token_to_user_id(token)
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM assignation WHERE userid = :userid"),
+        {"userid": id}
+        ).mappings().all()
+
+        if not res:
+            raise HTTPException(status_code=404, detail="Assignations not found")
+    
+        return res
+
+@app.post("/assignation/new", response_model=Assignation, tags=["Assignations"]) #Només la pot fer l'administrador
 def create_new_assignation(a: AssignationInsert):
     with engine.connect() as conn:
         try:
@@ -234,12 +271,13 @@ def create_new_assignation(a: AssignationInsert):
 
 @app.post("/assignation/update", response_model=Assignation, tags=["Assignations"])
 def update_assignation(a: AssignationUpdate):
+    id = token_to_user_id(a.userid)
     with engine.connect() as conn:
         try:
             assignation = conn.execute(
                 text("UPDATE assignation SET completed = :completed WHERE userid = :userid and trainingid = :trainingid RETURNING *"),
                 {"completed": a.completed,
-                 "userid": a.userid,
+                 "userid": id,
                  "trainingid": a.trainingid}
             ).mappings().one()
 
@@ -250,7 +288,7 @@ def update_assignation(a: AssignationUpdate):
         except NoResultFound:
             raise HTTPException(status_code=404, detail="Assignation not found")            
 
-@app.delete("/assignation/delete", tags=["Assignations"])
+@app.delete("/assignation/delete", tags=["Assignations"]) # Només la pot fer l'administrador
 def delete_assignation(userid: int, trainingid: int):
     with engine.connect() as conn:
         res = conn.execute(
@@ -297,24 +335,25 @@ def get_attempts_by_userid_and_timestamp(userid: int, timestamp: datetime):
     
         return res
     
-@app.post("/attempt/new", response_model=Attempt, tags=["Attempts"])
-def create_new_attempt(a: Attempt):
+@app.post("/attempt/new", tags=["Attempts"])
+def create_new_attempt(a: NewAttempt):
+    userid = token_to_user_id(a.userid)
     with engine.connect() as conn:
         try:
             attempt = conn.execute(
                 text("INSERT INTO attempt (userid, trainingid, time_spent, number_errors, timestamp) VALUES (:userid, :trainingid, :time_spent" \
                 ", :number_errors, :timestamp) RETURNING *"),
-                {"userid": a.userid, 
+                {"userid": userid, 
                  "trainingid": a.trainingid, 
                  "time_spent": a.time_spent,
                  "number_errors": a.number_errors,
                  "timestamp": a.timestamp}
             ).mappings().one()
-
             conn.commit()
-            return attempt
+
+            return {"success": True}
         
-        except NoResultFound:
+        except IntegrityError:
             raise HTTPException(status_code=404, detail="No user or training found")
         
 @app.delete("/attempt/delete", tags=["Attempts"])
@@ -337,4 +376,41 @@ def delete_attempt(userid: int, trainingid: int, timestamp: datetime):
 ###########################################################
 #########################SESSION###########################
 ###########################################################
+
+
+def token_to_user_id(token: str) -> int:
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return int(user_id)
+    except PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+
+@app.post("/login", tags=["User"])
+def get_user(u: UserLogin):
+    with engine.connect() as conn:
+        user = conn.execute(
+            text("SELECT id, password_hash from users where username = :username"),
+            {"username": u.username}
+        ).mappings().first()
+        try:
+            if hasher.verify(user["password_hash"], u.password):
+                payload = {
+                    "sub": str(user["id"]),
+                    "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+                }
+
+                token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+                return {
+                    "access_token": token,
+                    "token_type": "bearer"
+                }
+        except VerifyMismatchError:
+            raise HTTPException(status_code=401, detail="Incorrect password")
+
 
