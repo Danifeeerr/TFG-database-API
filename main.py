@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError,NoResultFound
 import os
 from typing import List
 from datetime import datetime
+from argon2 import PasswordHasher
 
 from models.users import Users, UsersInsert
 from models.training import Training, TrainingInsert
@@ -17,6 +18,8 @@ DATABASE_URL = os.getenv("dburl")
 engine = create_engine(DATABASE_URL) # Create a database engine using the URL from the environment variable
 
 app = FastAPI()
+
+hasher = PasswordHasher()
 
 @app.get("/")
 async def root():
@@ -52,12 +55,13 @@ def get_user_by_id(id: int):
  
 @app.post("/users/new", response_model=Users, tags=["Users"])
 def create_new_user(u: UsersInsert):
+    passHash = hasher.hash(u.password_hash)
     with engine.connect() as conn:
         try:
             user = conn.execute(
                 text("INSERT INTO users (username, password_hash, admin) VALUES (:username, :pass, :admin) RETURNING *"),
                 {"username": u.username, 
-                 "pass": u.password_hash, 
+                 "pass": passHash, 
                  "admin": u.admin}
             ).mappings().one()
 
@@ -70,12 +74,13 @@ def create_new_user(u: UsersInsert):
 
 @app.post("/users/update", response_model=Users, tags=["Users"])
 def update_user(u: Users):
+    passHash = hasher.hash(u.password_hash)
     with engine.connect() as conn:
         try:
             user = conn.execute(
                 text("UPDATE users SET username = :username, password_hash = :pass, admin = :admin WHERE id = :id RETURNING *"),
                 {"username": u.username,
-                 "pass": u.password_hash,
+                 "pass": passHash,
                  "admin": u.admin,
                  "id": u.id}
             ).mappings().one()
@@ -328,3 +333,8 @@ def delete_attempt(userid: int, trainingid: int, timestamp: datetime):
     
         return res
  
+
+###########################################################
+#########################SESSION###########################
+###########################################################
+
