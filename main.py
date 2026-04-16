@@ -325,6 +325,18 @@ def get_attempts_by_userid_and_trainingid(userid: int, trainingid: int):
     
         return res
     
+@app.get("/attempt/user", response_model=List[Attempt], tags=["Attempts"])
+def get_attempts_by_userid(userid: int):
+    with engine.connect() as conn:
+        res = conn.execute(text("SELECT * FROM attempt WHERE userid = :userid"),
+        {"userid": userid}
+        ).mappings().all()
+
+        if not res:
+            raise HTTPException(status_code=404, detail="Attempts not found")
+    
+        return res
+    
 @app.get("/attempt/timestamp", response_model=Attempt, tags=["Attempts"])
 def get_attempts_by_userid_and_timestamp(userid: int, timestamp: datetime):
     with engine.connect() as conn:
