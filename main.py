@@ -96,29 +96,32 @@ def create_new_user(u: UsersInsert):
         except IntegrityError:
             raise HTTPException(status_code=409, detail="Username already exists")
         
+    
 
-@app.post("/users/update", response_model=Users, tags=["Users"]) #Només ho pot fer l'administrador
+@app.post("/users/update", response_model=Users, tags=["Users"])
 def update_user(u: Users):
-    passHash = hasher.hash(u.password_hash)
     with engine.connect() as conn:
         try:
-            user = conn.execute(
-                text("UPDATE users SET username = :username, password_hash = :pass, admin = :admin WHERE id = :id RETURNING *"),
-                {"username": u.username.lower(),
-                 "pass": passHash,
-                 "admin": u.admin,
-                 "id": u.id}
-            ).mappings().one()
+            if u.password_hash:
+                passHash = hasher.hash(u.password_hash)
+                user = conn.execute(
+                    text("UPDATE users SET username = :username, password_hash = :pass, admin = :admin WHERE id = :id RETURNING *"),
+                    {"username": u.username.lower(), "pass": passHash, "admin": u.admin, "id": u.id}
+                ).mappings().one()
+            else:
+                user = conn.execute(
+                    text("UPDATE users SET username = :username, admin = :admin WHERE id = :id RETURNING *"),
+                    {"username": u.username.lower(), "admin": u.admin, "id": u.id}
+                ).mappings().one()
 
             conn.commit()
-
             return user
-        
+
         except NoResultFound:
-            raise HTTPException(status_code=404, detail="User not found")             
+            raise HTTPException(status_code=404, detail="User not found")
         except IntegrityError:
             raise HTTPException(status_code=409, detail="Username already exists")
-        
+
 @app.delete("/users/delete/{id}", tags=["Users"]) # Només ho pot fer l'administrador
 def delete_user(id: int):
     with engine.connect() as conn:
