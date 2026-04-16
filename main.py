@@ -85,7 +85,7 @@ def create_new_user(u: UsersInsert):
         try:
             user = conn.execute(
                 text("INSERT INTO users (username, password_hash, admin) VALUES (:username, :pass, :admin) RETURNING *"),
-                {"username": u.username, 
+                {"username": u.username.lower(), 
                  "pass": passHash, 
                  "admin": u.admin}
             ).mappings().one()
@@ -104,7 +104,7 @@ def update_user(u: Users):
         try:
             user = conn.execute(
                 text("UPDATE users SET username = :username, password_hash = :pass, admin = :admin WHERE id = :id RETURNING *"),
-                {"username": u.username,
+                {"username": u.username.lower(),
                  "pass": passHash,
                  "admin": u.admin,
                  "id": u.id}
@@ -395,8 +395,10 @@ def get_user(u: UserLogin):
     with engine.connect() as conn:
         user = conn.execute(
             text("SELECT id, password_hash from users where username = :username"),
-            {"username": u.username}
+            {"username": u.username.lower()}
         ).mappings().first()
+        if not user:
+            raise HTTPException(status_code=401, detail="No username found")
         try:
             if hasher.verify(user["password_hash"], u.password):
                 payload = {
