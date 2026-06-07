@@ -11,8 +11,8 @@ Este repositorio es uno de los tres componentes que forman el TFG:
 | Proyecto | Descripción | Repositorio |
 |---|---|---|
 | **API** (este repo) | Backend REST, gestión de la base de datos | — |
-| **Aplicación de escritorio** | Cliente de administración | [Ver repositorio](#) |
-| **Aplicación de Realidad Virtual** | Aplicación principal de entrenamiento | [Ver repositorio](#) |
+| **Aplicación de escritorio** | Cliente de administración | [Ver repositorio](https://github.com/Danifeeerr/VRdashboard-TFG) |
+| **Aplicación de Realidad Virtual** | Aplicación principal de entrenamiento | [Ver repositorio](https://github.com/Danifeeerr/occupational-safety-TFG) |
 
 ---
 
